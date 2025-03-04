@@ -49,20 +49,41 @@ If you want to see an example of this in action,
 check out this DataCamp video: 
 https://campus.datacamp.com/courses/exploratory-data-analysis-in-sql/summarizing-and-aggregating-numeric-data?ex=6) */
 
+WITH decade AS
+	SELECT *
+	FROM GENERATE_SERIES(MIN(yearid), MAX(yearid), 10) AS decade
+
 SELECT
-	ROUND(AVG(hr), 2) AS average_homeruns,
-	ROUND(AVG(so), 2) AS average_strikeouts, 
-	decade||'-'||decade+9 as period
+	g AS games,
+	so AS strikeouts,
+	hr AS homeruns,
+	ROUND(((AVG(hr)) / g) , 2) AS average_homeruns_per_game,
+	ROUND(((AVG(so)) / g), 2) AS average_strikeouts_per_game,
+    GENERATE_SERIES(MIN(yearid), MAX(yearid)) AS decade
 FROM 
-	(SELECT
-		hr,
-		so,
-		(CAST( (yearid/10) AS int)*10) AS decade
-		FROM pitching
-		WHERE (CAST( (yearid/10) AS int)*10) !=0
-		ORDER BY decade)
-WHERE decade > 1919
-GROUP BY decade;
+	pitching
+GROUP BY 
+	games,
+	strikeouts,
+	homeruns
+ORDER BY decade;
+
+
+SELECT
+    trunc(yearid, -1) || 's' AS decade,
+    AVG(g) AS avg_games_played,
+    AVG(so) AS avg_strikeouts_pitching,
+    ROUND(SUM(so)::numeric /(SUM(g)::numeric), 2) AS avg_so_per_game
+FROM
+    teams
+WHERE
+    yearid >= 1920
+GROUP BY
+    decade
+ORDER BY
+    decade;
+
+
 
 /* 4. Find the player who had the most success stealing bases in 2016,
 where __success__ is measured as the percentage of stolen base attempts 
@@ -103,7 +124,18 @@ case that a team with the most wins also won the world series?
 What percentage of the time? */
 
 
+SELECT yearid, name, w, l, wswin
+FROM teams
+WHERE yearid BETWEEN 1970 AND 2016
+    AND wswin = 'N'
+ORDER BY w DESC;
 
+
+SELECT yearid, name, w, l, wswin
+FROM teams
+WHERE yearid BETWEEN 1970 AND 2016
+    AND wswin = 'Y'
+ORDER BY w;
 
 
 /* 6. Which managers have won the TSN Manager of the Year award in 
@@ -111,8 +143,26 @@ both the National League (NL) and the American League (AL)?
 Give their full name and the teams that they were managing when 
 they won the award. */
 
-
-
+SELECT
+    namefirst || ' ' || namelast AS name,
+    a.yearid,
+    awardid,
+    a.lgid,
+    name AS team
+FROM awardsmanagers AS a
+    LEFT JOIN people AS b USING (playerid)
+    LEFT JOIN managers AS c USING (playerid, yearid)
+    LEFT JOIN teams AS d USING (teamid, yearid)
+WHERE
+    a.lgid IN ('AL', 'NL')
+    AND awardid = 'TSN Manager of the Year'
+    AND playerid IN (
+        SELECT playerid
+        FROM awardsmanagers AS e
+        WHERE awardid = 'TSN Manager of the Year'
+            AND lgid IN ('AL', 'NL')
+        GROUP BY playerid
+        HAVING COUNT(DISTINCT lgid) = 2);
 
 
 /* 7. Which pitcher was the least efficient in 2016 in terms of salary
@@ -120,6 +170,21 @@ they won the award. */
 (across all teams). Note that pitchers often play for more than one 
 team in a season, so be sure that you are counting all stats for each
 player. */
+
+SELECT
+    namefirst || ' ' || namelast AS name,
+    SUM(salary) AS salary,
+    SUM(so) AS strikeouts,
+    SUM(gs) AS games_started,
+    ROUND((SUM(so::numeric) / SUM(salary::numeric)), 10) AS so_per_dollar
+FROM salaries AS s
+INNER JOIN pitching AS pt USING (playerid)
+INNER JOIN people AS p USING (playerid)
+WHERE
+    s.yearid = 2016
+    AND gs >= 10
+GROUP BY name
+ORDER BY so_per_dollar;
 
 
 
