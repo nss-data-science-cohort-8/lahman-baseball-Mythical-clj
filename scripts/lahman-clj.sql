@@ -5,10 +5,11 @@ Sort this list in descending order by the total salary earned.
 Which Vanderbilt player earned the most money in the majors? */
 
 
+-- CAVIN'S (WRONG, Need to distinct playerid)
 SELECT
 	namefirst ||' '||
 	namelast AS name,
-	CAST(SUM(DISTINCT salary) AS NUMERIC)::MONEY AS total_earned,
+	CAST(SUM(salary) AS NUMERIC)::MONEY AS total_earned,
 	schoolname
 FROM people
 INNER JOIN salaries
@@ -17,11 +18,29 @@ INNER JOIN collegeplaying
 	USING(playerid)
 INNER JOIN schools
 	USING(schoolid)
-WHERE schoolname = 'Vanderbilt University'
+WHERE schoolid = 'vandy'
 GROUP BY namefirst, namelast, schoolname
 ORDER BY total_earned DESC
-LIMIT 1; -- David Price made $245,553,888.00
+LIMIT 5; -- David Price made $81,851,296.00
 
+
+-- MICHAEL'S
+WITH vandy_players AS (
+    SELECT DISTINCT playerid
+    FROM collegeplaying
+    WHERE schoolid = 'vandy'
+)
+SELECT 
+    namefirst || ' ' || namelast AS fullname, 
+    SUM(salary)::int::MONEY AS total_salary
+FROM salaries
+INNER JOIN vandy_players
+USING(playerid)
+INNER JOIN people
+USING(playerid)
+GROUP BY fullname
+ORDER BY total_salary DESC
+LIMIT 5;
 
 /* 2. Using the fielding table, group players into three groups based on 
 their position: label players with position OF as "Outfield", 
@@ -57,7 +76,6 @@ https://campus.datacamp.com/courses/exploratory-data-analysis-in-sql/summarizing
 -- CAVIN'S
 WITH decade AS
 	SELECT GENERATE_SERIES(MIN(yearid), MAX(yearid), 10) AS decade
-
 SELECT
 	g AS games,
 	so AS strikeouts,
@@ -93,23 +111,6 @@ GROUP BY lower, upper
 ORDER BY lower;
 
 
-
--- ANDREW'S
-SELECT
-    trunc(yearid, -1) || 's' AS decade,
-    AVG(g) AS avg_games_played,
-    AVG(so) AS avg_strikeouts_pitching,
-    ROUND(SUM(so)::numeric /(SUM(g)::numeric), 2) AS avg_so_per_game
-FROM
-    teams
-WHERE
-    yearid >= 1920
-GROUP BY
-    decade
-ORDER BY
-    decade;
-
-
 --BRANNON'S
 WITH decade_int AS(
      SELECT generate_series(1920,2010,10) AS lower,
@@ -124,6 +125,32 @@ SELECT
  ON yearid >= lower AND yearid <= upper
  GROUP BY lower, upper
  ORDER BY lower, upper;
+
+
+-- ALEXA'S
+WITH decades AS (
+	SELECT generate_series(1920, MAX(yearid), 10) AS decade_start,
+	generate_series(1929, (MAX(yearid) + 10), 10) AS decade_end
+	FROM batting
+)
+SELECT 
+	decade_start, 
+	decade_end, 
+	ROUND(SUM(so)::numeric/SUM(g)::numeric, 2) as total_so, 
+	ROUND(SUM(hr)::numeric/SUM(g)::numeric, 2) as total_hr
+	/***
+	depends on how you count the games, if orioles vs braves, orioles gets counted once and 
+	braves get counted once, so you can divide by two OR leave as is depending on your understanding
+	***/
+	-- , ROUND(SUM(hr) * 1.0 / (SUM(g) / 2.0), 2) AS hr_per_game
+	-- , ROUND(SUM(so) * 1.0 / (SUM(g) / 2.0), 2) AS so_per_game 
+FROM decades a 
+LEFT JOIN teams b 
+ON b.yearid >= a.decade_start
+AND b.yearid <= a.decade_end
+WHERE b.yearid >= 1920
+GROUP BY 1,2
+ORDER BY 1,2;
 
 
 /* 4. Find the player who had the most success stealing bases in 2016,
@@ -155,6 +182,30 @@ FROM
 INNER JOIN people
 	USING(playerid)
 ORDER BY stolen_percent DESC;
+
+
+-- ALEXA'S
+WITH full_batting AS (
+    SELECT
+        playerid,
+        SUM(sb) AS sb,
+        SUM(cs) AS cs
+    FROM batting
+    WHERE yearid = 2016
+    GROUP BY playerid
+)
+SELECT
+    namefirst || ' ' || namelast AS full_name,
+    sb, 
+    sb + cs AS attempts,
+    ROUND(sb * 100.0 / (sb + cs), 1) AS sb_pct
+FROM full_batting
+INNER JOIN people
+USING(playerid)
+WHERE sb + cs >= 20
+ORDER BY sb_pct DESC
+LIMIT 5;
+
 
 
 /* 5. From 1970 to 2016, what is the largest number of wins for a team
@@ -205,6 +256,67 @@ GROUP BY yearid, wswin, most_wins_per_year, W
 ORDER BY yearid)
 SELECT ROUND(100 * (CAST(SUM(ws_win_max) AS NUMERIC)/CAST(COUNT(DISTINCT yearid) AS NUMERIC)), 2) AS ws_win_max_percentage
 FROM ws_max_table;
+
+
+-- MICHAEL'S
+WITH most_wins AS (
+    SELECT
+        yearid,
+        MAX(w) AS w
+    FROM teams
+    WHERE yearid >= 1970
+    GROUP BY yearid
+    ORDER BY yearid
+    ),
+ws_winners_with_most_wins AS (
+    SELECT 
+        yearid,
+        teamid,
+        w
+    FROM teams
+    INNER JOIN most_wins
+    USING(yearid, w)
+    WHERE wswin = 'Y'
+),
+ws_years AS (
+    SELECT COUNT(DISTINCT yearid)
+    FROM teams
+    WHERE wswin = 'Y' AND yearid >= 1970
+)
+SELECT 
+    (SELECT COUNT(*) FROM ws_winners_with_most_wins) AS num_most_win_ws_winners,
+    (SELECT * FROM ws_years) as years_with_ws,
+    ROUND((SELECT COUNT(*)
+     FROM ws_winners_with_most_wins
+    ) * 100.0 /
+    (SELECT *
+     FROM ws_years
+    ), 2) AS most_wins_ws_pct
+    ;
+
+
+-- ALEXA'S
+with filtered_table AS (
+SELECT 
+    yearid
+    , teamid
+    , WSWin
+    , w
+    , RANK() OVER (PARTITION BY yearid ORDER BY w DESC) AS rank
+FROM teams
+WHERE yearid >= 1970
+AND yearid <= 2016
+AND yearid <> 1981 --the problem year
+)
+SELECT 
+    ROUND(SUM(CASE WHEN wswin = 'Y' THEN 1 END ) / SUM(rank) * 100 ,2) 
+    /***
+    this is 12/52 TEAMS whereas 12/46 YEARS this happens. Rank doesn't account for ties
+    ***/
+FROM filtered_table 
+WHERE rank=1;
+
+
 
 /* 6. Which managers have won the TSN Manager of the Year award in 
 both the National League (NL) and the American League (AL)? 
@@ -291,7 +403,49 @@ ORDER BY total_hits DESC;
 /* 9. Find all players who had at least 1,000 hits for two different 
 teams. Report those players' full names. */
 
-
+WITH hitters AS 
+	(SELECT
+	    playerid,
+	    teamid,
+	    hits
+	FROM (SELECT
+	        playerid,
+	        teamid,
+	        SUM(h) AS hits
+	    FROM batting
+	    GROUP BY playerid, teamid
+	    HAVING SUM(h) >= 1000
+	) AS player_team_hits
+	WHERE playerid IN (
+	        SELECT 
+				playerid
+	        FROM (
+	            SELECT 
+					playerid, 
+					teamid, 
+					SUM(h) AS hits
+	            FROM batting
+	            GROUP BY 
+					playerid, 
+					teamid
+	            HAVING SUM(h) >= 1000
+	        ) AS inner_player_team_hits
+	        GROUP BY 
+				playerid
+	        HAVING COUNT(teamid) >= 2)
+	ORDER BY playerid),
+teamnames AS (
+    SELECT 
+		DISTINCT teamid, name
+    FROM teams
+)
+SELECT 
+	namefirst||' '||namelast AS playername, 
+	h.teamid AS team, 
+	h.hits AS hits
+FROM people AS p
+INNER JOIN hitters AS h
+USING(playerid);
 
 
 
