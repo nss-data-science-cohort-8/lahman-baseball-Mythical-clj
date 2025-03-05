@@ -403,6 +403,8 @@ ORDER BY total_hits DESC;
 /* 9. Find all players who had at least 1,000 hits for two different 
 teams. Report those players' full names. */
 
+
+-- ANDREW'S
 WITH hitters AS 
 	(SELECT
 	    playerid,
