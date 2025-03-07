@@ -291,8 +291,7 @@ SELECT
     ) * 100.0 /
     (SELECT *
      FROM ws_years
-    ), 2) AS most_wins_ws_pct
-    ;
+    ), 2) AS most_wins_ws_pct;
 
 
 -- ALEXA'S
@@ -323,6 +322,8 @@ both the National League (NL) and the American League (AL)?
 Give their full name and the teams that they were managing when 
 they won the award. */
 
+
+-- CAVIN'S
 SELECT
     namefirst || ' ' || namelast AS name,
     a.yearid,
@@ -344,6 +345,67 @@ WHERE
         GROUP BY playerid
         HAVING COUNT(DISTINCT lgid) = 2);
 
+-- ALEXANDER'S
+
+
+
+
+
+-- ALEXA'S
+WITH both_league_winners AS (
+    SELECT
+        playerid
+    FROM awardsmanagers
+    WHERE awardid = 'TSN Manager of the Year'
+        AND lgid IN ('AL', 'NL')
+    GROUP BY playerid
+    HAVING COUNT(DISTINCT lgid) = 2
+    )
+SELECT
+    namefirst || ' ' || namelast AS full_name,
+    yearid,
+    lgid,
+    name AS team_name
+FROM people
+INNER JOIN both_league_winners
+USING(playerid)
+INNER JOIN awardsmanagers
+USING(playerid)
+INNER JOIN managers
+USING(playerid, yearid, lgid)
+INNER JOIN teams
+USING(teamid, yearid,lgid)
+WHERE awardid = 'TSN Manager of the Year'
+ORDER BY full_name, yearid;
+with winners AS (
+SELECT 
+    playerid
+    , COUNT(DISTINCT lgid) as leagues_won
+FROM awardsmanagers
+WHERE awardid LIKE '%TSN%'
+AND lgid IN ('NL', 'AL')
+GROUP BY 1
+)
+, dual_leagues AS (
+SELECT 
+    yearid
+    , playerid
+FROM (SELECT playerid FROM winners WHERE leagues_won > 1) a
+LEFT JOIN awardsmanagers b
+USING(playerid)
+WHERE awardid LIKE '%TSN%'
+)
+SELECT
+    namefirst
+    , namelast
+    , teamid
+    , yearid
+FROM dual_leagues a
+LEFT JOIN managers
+USING (yearid, playerid)
+LEFT JOIN people
+USING (playerid);
+
 
 /* 7. Which pitcher was the least efficient in 2016 in terms of salary
 / strikeouts? Only consider pitchers who started at least 10 games 
@@ -351,17 +413,54 @@ WHERE
 team in a season, so be sure that you are counting all stats for each
 player. */
 
+-- MICHAEL'S
+WITH total_salaries AS
+	(
+	SELECT
+		SUM(salary) AS total_salary
+		,playerid
+	FROM salaries
+	WHERE yearid = 2016
+	GROUP BY playerid
+	),
+total_strikeouts AS (
+	SELECT
+		SUM(so) AS total_strikeout
+		,SUM(gs) as games_started
+		,playerid
+	FROM pitching
+	WHERE yearid = 2016
+	GROUP BY playerid
+	)
+SELECT 
+	namefirst || ' ' || namelast AS name
+	,ROUND(total_salary::numeric/total_strikeout::numeric, 2)::money AS salary_strikeouts
+	,total_salary::numeric::money
+	,total_strikeout
+	,games_started
+FROM people
+INNER JOIN total_salaries
+	USING(playerid)
+INNER JOIN total_strikeouts
+	USING(playerid)
+WHERE games_started >= 10
+ORDER BY salary_strikeouts
+
+
+
+
+
 SELECT
     namefirst || ' ' || namelast AS name,
     SUM(salary) AS salary,
     SUM(so) AS strikeouts,
     SUM(gs) AS games_started,
     ROUND((SUM(so::numeric) / SUM(salary::numeric)), 10) AS so_per_dollar
-FROM salaries AS s
-INNER JOIN pitching AS pt USING (playerid)
-INNER JOIN people AS p USING (playerid)
+FROM salaries AS a
+INNER JOIN pitching AS b USING (playerid)
+INNER JOIN people AS c USING (playerid)
 WHERE
-    s.yearid = 2016
+    a.yearid = 2016
     AND gs >= 10
 GROUP BY name
 ORDER BY so_per_dollar;
@@ -376,32 +475,88 @@ Note that a player being inducted into the hall of fame is indicated
 by a 'Y' in the **inducted** column of the halloffame table. */
 
 WITH winners AS
-	(SELECT DISTINCT playerid, yearid
+	(SELECT DISTINCT 
+	playerid
+	,yearid
 	FROM halloffame
-	WHERE inducted = 'Y'),
+	WHERE inducted = 'Y')
 
-career_hits AS
+,career_hits AS
 	(SELECT playerid, SUM(h) AS total_hits
 	FROM batting
 	GROUP BY playerid
 	HAVING SUM(h) >= 3000)
 
 SELECT
-  a.namefirst || ' ' || a.namelast AS name,
-  MAX(c.yearid) AS induction_year,
-  total_hits
+  a.namefirst || ' ' || a.namelast AS name
+  ,MAX(c.yearid) AS induction_year
+  ,total_hits
 FROM people AS a
 INNER JOIN batting AS b USING(playerid)
 LEFT JOIN winners AS c USING(playerid)
 INNER JOIN career_hits AS d USING(playerid)
 GROUP BY
-	name, total_hits
-ORDER BY total_hits DESC;
+	name
+	,total_hits
+ORDER BY induction_year DESC;
 
 
 
 /* 9. Find all players who had at least 1,000 hits for two different 
 teams. Report those players' full names. */
+
+-- CAVIN'S (UNFINISHED)
+WITH grand_hits AS
+	(
+	SELECT 
+		playerid
+		,SUM(h) AS all_hits
+	FROM batting
+	GROUP BY 
+		playerid
+	HAVING SUM (h) >= 1000
+	)
+two_teams AS
+	(
+	SELECT
+		playerid
+		,team_name
+	FROM teams
+	WHERE COUNT(DISTINCT team_name) >= 2
+	)
+
+
+--BRANNON'S
+WITH CTE_1 AS
+	(SELECT batting.playerid
+	,SUM(batting.h) AS total_hits
+	,teams.name AS team_name
+	FROM batting
+	INNER JOIN teams
+	USING(teamid, yearid)
+	GROUP BY batting.playerid, teams.name
+	HAVING SUM(batting.h) >= 1000
+	),
+
+CTE_2 AS 
+	(SELECT CTE_1.playerid
+	FROM CTE_1
+	INNER JOIN people
+	USING(playerid)
+	GROUP BY CTE_1.playerid
+	HAVING COUNT(DISTINCT CTE_1.team_name) >= 2
+	)
+
+SELECT namefirst || ' ' || namelast AS full_name
+,team_name
+,total_hits
+FROM CTE_2
+INNER JOIN CTE_1
+USING(playerid)
+INNER JOIN people
+USING(playerid)
+GROUP BY namefirst, namelast, team_name, total_hits
+ORDER BY total_hits DESC;
 
 
 -- ANDREW'S
@@ -451,15 +606,204 @@ USING(playerid);
 
 
 
+-- ALEXA'S
+WITH x AS (
+    SELECT 
+        playerid
+        , teamid
+        , SUM(h) total_hits
+    FROM batting
+    GROUP BY 1,2
+)
+, xy AS (
+    SELECT
+        DISTINCT playerid
+        -- , COUNT (DISTINCT teamid) AS number_of_teams
+    FROM x
+    WHERE total_hits > 1000
+    GROUP BY playerid
+    HAVING COUNT (DISTINCT teamid) > 1
+)
+SELECT 
+    namefirst
+    , namelast
+FROM people
+JOIN xy
+USING(playerid);
+
+
+-- JEFF'S
+WITH hitting_summary AS(
+	SELECT batting.playerid, batting.teamid, SUM(h) AS hits
+	FROM batting
+	GROUP BY batting.playerid, batting.teamid
+	HAVING SUM(h) >= 1000
+	ORDER BY playerid
+),
+team_count_summary AS(
+	SELECT 
+    playerid
+	FROM hitting_summary
+	GROUP BY playerid
+	HAVING COUNT(DISTINCT teamid) >1
+)
+SELECT people.playerid, namefirst, namelast
+FROM team_count_summary
+LEFT JOIN people ON team_count_summary.playerid = people.playerid
+
+
+
+-- MICHAEL'S
+WITH thousandaires AS (
+    SELECT
+        playerid
+    FROM batting
+    GROUP BY playerid, teamid
+    HAVING SUM(h) >= 1000
+),
+double_thousandaires AS (
+    SELECT
+        playerid
+    FROM thousandaires
+    GROUP BY playerid
+    HAVING COUNT(*) >= 2
+)
+SELECT
+    namefirst || ' ' || namelast AS full_name
+FROM people
+INNER JOIN double_thousandaires
+USING(playerid);
+
 /* 10. Find all players who hit their career highest number of home 
 runs in 2016. Consider only players who have played in the league 
 for at least 10 years, and who hit at least one home run in 2016. 
 Report the players' first and last names and the number of home runs 
 they hit in 2016. */
 
+-- ZACH'S
+WITH max_homeruns AS(
+	SELECT playerid, MAX(hr) AS max_hr
+	FROM batting
+	GROUP BY playerid
+),
+hr_2016 AS(
+	SELECT playerid, SUM(hr) AS homeruns_2016
+	FROM batting
+	WHERE yearid = 2016
+	GROUP BY playerid
+	HAVING SUM(hr) >= 1
+),
+years_played AS(
+	SELECT playerid, COUNT(DISTINCT yearid) AS tot_years_played
+	FROM batting
+	GROUP BY playerid
+	HAVING COUNT(DISTINCT yearid) >= 10
+)
+SELECT namefirst || ' ' || namelast full_name, mh.max_hr
+FROM people p
+INNER JOIN max_homeruns mh
+USING(playerid)
+INNER JOIN years_played yp
+USING(playerid)
+INNER JOIN hr_2016 h16
+USING(playerid)
+WHERE mh.max_hr = h16.homeruns_2016;
+
+
+-- ALEXANDER'S
+WITH player_max_hrs AS (
+	SELECT 
+	playerid, 
+	CONCAT(namefirst, ' ', namelast) AS fullname, 
+	MAX(hr) AS max_hrs, 
+	COUNT(DISTINCT yearid) AS num_years_in_league
+	FROM people
+	INNER JOIN batting
+	USING(playerid)
+	GROUP BY playerid, fullname
+	HAVING MAX(hr) > 0
+		AND COUNT(DISTINCT yearid) >= 10
+	ORDER BY max_hrs DESC
+)
+SELECT fullname, hr
+FROM people
+INNER JOIN batting
+USING(playerid)
+INNER JOIN player_max_hrs
+USING(playerid)
+WHERE hr = max_hrs
+	AND yearid = 2016
+ORDER BY hr DESC;
 
 
 
+-- ANDREW'S
+WITH MaxHRByPlayer AS (
+    SELECT playerid, MAX(hr) AS max_hr
+    FROM batting
+    GROUP BY playerid
+  ),
+  YearOfMaxHR AS (
+    SELECT
+      b.playerid,
+      b.yearid,
+      b.hr,
+      m.max_hr
+    FROM batting AS b
+    INNER JOIN MaxHRByPlayer AS m USING(playerid)
+    WHERE b.hr = m.max_hr
+  )
+SELECT
+  namefirst||' '||namelast AS playername,
+  max_hr
+FROM YearOfMaxHR
+LEFT JOIN people AS p USING(playerid)
+WHERE yearid = 2016
+    AND hr <> 0
+ORDER BY max_hr DESC;
+
+
+
+-- ALEXA'S
+WITH full_batting AS (
+	SELECT
+		playerid,
+		yearid,
+		SUM(hr) AS hr
+	FROM batting
+	GROUP BY playerid, yearid
+),
+decaders AS (
+	SELECT
+		playerid
+	FROM full_batting
+	GROUP BY playerid
+	HAVING COUNT(DISTINCT yearid) >= 10
+),
+eligible_players AS (
+	SELECT
+		playerid,
+		hr
+	FROM decaders
+	INNER JOIN full_batting
+	USING(playerid)
+	WHERE yearid = 2016 AND hr >= 1
+),
+career_bests AS (
+	SELECT
+		playerid,
+		MAX(hr) AS hr
+	FROM full_batting
+	GROUP BY playerid
+)
+SELECT
+	namefirst || ' ' || namelast AS full_name,
+	hr
+FROM eligible_players
+NATURAL JOIN career_bests
+INNER JOIN people
+USING(playerid)
+ORDER BY hr DESC;
 
 
 
@@ -500,6 +844,7 @@ dispute this claim. First, determine just how rare left-handed pitchers
 are compared with right-handed pitchers. Are left-handed pitchers more
 likely to win the Cy Young Award? Are they more likely to make it 
 into the hall of fame? */
+
 
 
 
